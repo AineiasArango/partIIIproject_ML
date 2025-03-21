@@ -25,7 +25,7 @@ def mass_flux_at_radius(snap_dir, snap_number, radius, delta_r):
     fof_file = rff.get_fof_filename(snap_dir, snap_number)
     a = rff.get_attribute(fof_file, "Time") #scale factor
     subhalopos = cu.cosmo_to_phys(rff.get_subhalo_data(fof_file, 'SubhaloPos')[0], a, h, length=True) #subhalo position (kpc)
-    subhalovel = rff.get_group_data(fof_file, "SubhaloVel")[0] #peculiar velocity of the subhalo (km/s)
+    subhalovel = rff.get_subhalo_data(fof_file, "SubhaloVel")[0] #peculiar velocity of the subhalo (km/s)
     
     snap_name = rsf.get_snap_filename(snap_dir, snap_number)
     pos0 = cu.cosmo_to_phys(rsf.get_snap_data(snap_name,0,"Coordinates"), a, h, length=True)[gal_inds] #use 0 because gas is particle type 0. Position of every gas particle in the snapshot (kpc)
@@ -100,7 +100,7 @@ def Fiacconi_mass_flux(snap_dir, snap_number, num_neighbours=32):
     #get attributes and convert units
     a = rff.get_attribute(fof_file, "Time") #scale factor
     subhalopos = cu.cosmo_to_phys(rff.get_subhalo_data(fof_file, 'SubhaloPos')[0], a, h, length=True) #subhalo position (kpc)
-    subhalovel = rff.get_group_data(fof_file, "SubhaloVel")[0] #peculiar velocity of the subhalo (km/s). This acts as the velocity of the central black hole.
+    subhalovel = rff.get_subhalo_data(fof_file, "SubhaloVel")[0] #peculiar velocity of the subhalo (km/s). This acts as the velocity of the central black hole.
 
     #Need position, velocity, and density of the gas particles
     pos0 = cu.cosmo_to_phys(rsf.get_snap_data(snap_name,0,"Coordinates"), a, h, length=True)[gal_inds] #gas particle positions (kpc)
@@ -232,7 +232,7 @@ def Fiacconi_mass_flux_edges(snap_dir, snap_number, num_neighbours=32):
     #get attributes and convert units
     a = rff.get_attribute(fof_file, "Time") #scale factor
     subhalopos = cu.cosmo_to_phys(rff.get_subhalo_data(fof_file, 'SubhaloPos')[0], a, h, length=True) #subhalo position (kpc)
-    subhalovel = rff.get_group_data(fof_file, "SubhaloVel")[0] #peculiar velocity of the subhalo (km/s). This acts as the velocity of the central black hole.
+    subhalovel = rff.get_subhalo_data(fof_file, "SubhaloVel")[0] #peculiar velocity of the subhalo (km/s). This acts as the velocity of the central black hole.
     redshift = rff.get_attribute(fof_file, "Redshift")
     subhalomass = rff.get_subhalo_data(fof_file, 'SubhaloMass')[0]
 
@@ -297,4 +297,36 @@ def Fiacconi_mass_flux_edges(snap_dir, snap_number, num_neighbours=32):
     seconds_per_year = 31557600
     mass_flow = area*mass_flux*conversion_factor*seconds_per_year #negative if inflowing. This is in Msun/yr
     return [redshift, subhalomass], mass_flow, np.vstack((neighbour_pos[:,0], neighbour_pos[:,1], neighbour_pos[:,2], neighbour_radial_velocities, neighbour_densities, neighbour_volumes ,neighbour_masses, neighbour_T, neighbour_neutral_hydrogen_abundance)).T, edges
+
+#returns the number of cells within the smoothing length (0.194 ckpc for  high res, 0.387 ckpc for low res)
+def num_cells_within_smoothing(snap_dir, snap_number, smoothing_length):
+    import numpy as np
+    from scipy import spatial
+    import read_fof_files as rff
+    import read_snap_files as rsf
+    import cosmo_utils as cu
+    
+    #constants
+    h = 0.679 #dimensionless Hubble constant
+
+    #get fof file and snap file
+    fof_file = rff.get_fof_filename(snap_dir, snap_number)
+    snap_name = rsf.get_snap_filename(snap_dir, snap_number)
+
+    #get host group
+    host_groups = cu.get_host_groups(snap_dir, snap_number, 0)
+    gal_inds = host_groups == 0
+
+    #get attributes and convert units
+    a = rff.get_attribute(fof_file, "Time") #scale factor
+    subhalopos = cu.cosmo_to_phys(rff.get_subhalo_data(fof_file, 'SubhaloPos')[0], a, h, length=True) #subhalo position (kpc)
+
+    #Need position of the gas particles
+    pos0 = cu.cosmo_to_phys(rsf.get_snap_data(snap_name,0,"Coordinates"), a, h, length=True)[gal_inds] #gas particle positions (kpc)
+    #Make the gas tree
+    gas_tree = spatial.cKDTree(pos0)
+
+    #Find the central index of the subhalo
+    neighbour_inds = gas_tree.query_ball_point(subhalopos, r=smoothing_length)
+    return len(neighbour_inds)
 

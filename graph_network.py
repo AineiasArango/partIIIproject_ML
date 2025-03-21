@@ -494,7 +494,7 @@ class GNNLightningModule(pl.LightningModule):
 
 class GraphDataModule(pl.LightningDataModule):
     def __init__(self, mass_flows, neighbour_data, edges, global_data, 
-                 batch_size=32, valid_size=0.1, test_size=0.1):
+                 batch_size=32, valid_size=0.1, test_size=0.1, seed=42):
         super().__init__()
         self.mass_flows = mass_flows
         self.neighbour_data = neighbour_data
@@ -503,7 +503,7 @@ class GraphDataModule(pl.LightningDataModule):
         self.batch_size = batch_size
         self.valid_size = valid_size
         self.test_size = test_size
-        
+        self.seed = seed
     def setup(self, stage=None):
         # Create full dataset
         dataset = []
@@ -527,10 +527,12 @@ class GraphDataModule(pl.LightningDataModule):
         #generator = torch.Generator().manual_seed(42)  # You can use any seed number
         
         # Split dataset with the generator
+        # Split dataset
+        generator = torch.Generator().manual_seed(self.seed)  # You can use any integer as seed
         self.train_data, self.val_data, self.test_data = random_split(
             dataset, 
             [n_train, n_valid, n_test],
-            #generator=generator
+            generator=generator
         )
         
         # Log dataset info
@@ -539,7 +541,7 @@ class GraphDataModule(pl.LightningDataModule):
             "val_size": n_valid,
             "test_size": n_test,
             "total_samples": n_samples,
-            "random_seed": 42  # Log the seed used
+            "random_seed": self.seed  # Log the seed used
         })
     
     def train_dataloader(self):
@@ -551,7 +553,7 @@ class GraphDataModule(pl.LightningDataModule):
     def test_dataloader(self):
         return DataLoader(self.test_data, batch_size=len(self.test_data))
 
-def train_model(mass_flows, neighbour_data, edges, global_data):
+def train_model(mass_flows, neighbour_data, edges, global_data, batch_size=32, valid_size=0.1, test_size=0.2, model_name="EdgeNet", n_layers=5, hidden_channels=64, latent_channels=32, learning_rate=1e-3, weight_decay=0, seed=42):
     # Initialize wandb with smaller network dimensions
     wandb.init(
         project="graph-nn-mass-flow",
@@ -560,7 +562,7 @@ def train_model(mass_flows, neighbour_data, edges, global_data):
             "dataset": "mass_flow",
             "learning_rate": 1e-3,
             "weight_decay": 0,
-            "batch_size": 32,
+            "batch_size": batch_size,
             "n_layers": 5,
             "hidden_channels": 64,    # Reduced from 300
             "latent_channels": 32,    # Reduced from 100
@@ -575,20 +577,21 @@ def train_model(mass_flows, neighbour_data, edges, global_data):
         neighbour_data=neighbour_data,
         edges=edges,
         global_data=global_data,
-        batch_size=32,
-        valid_size=0.1,
-        test_size=0.2
+        batch_size=batch_size,
+        valid_size=valid_size,
+        test_size=test_size,
+        seed=seed
     )
     
     # Initialize model with smaller dimensions
     model = GNNLightningModule(
-        model_name="EdgeNet",
+        model_name=model_name,
         node_features=neighbour_data.shape[2],
-        n_layers=5,
-        hidden_channels=64,    # Reduced from 300
-        latent_channels=32,    # Reduced from 100
-        learning_rate=1e-3,
-        weight_decay=0
+        n_layers=n_layers,
+        hidden_channels=hidden_channels,
+        latent_channels=latent_channels,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay
     )
     
     # Setup wandb logger
@@ -620,7 +623,9 @@ def train_model(mass_flows, neighbour_data, edges, global_data):
     trainer.fit(model, data_module)
     
     # Test model
-    trainer.test(model, data_module)
+    test_results = trainer.test(model, data_module)
     
     # Close wandb run
     wandb.finish()
+
+    return test_results[0]['test_loss']
